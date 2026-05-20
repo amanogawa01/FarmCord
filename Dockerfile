@@ -1,41 +1,12 @@
-FROM mcr.microsoft.com/dotnet/sdk:5.0.102-ca-patch-buster-slim AS BUILDER
-
-WORKDIR /source/
-
-COPY *.csproj /source/
-
-COPY ./ /source/
-
-RUN cd /source/
-
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+WORKDIR /src
+COPY *.csproj ./
 RUN dotnet restore
-
-RUN dotnet build
-
-RUN cd ./bin/Debug/net5.0/
-
-RUN cd  FarmCord
-
-RUN mkdir FarmOutput/
-
-RUN mkdir Assets/
-
-RUN cd ..
-
-RUN cd ..
-
-RUN cd ..
-
-RUN cd ..
-
-RUN cd FarmCord
-
-COPY /FarmCord/creds.json ./source/bin/Debug/net5.0/FarmCord/
-
-COPY /FarmCord/Assets/Island.png ./source/bin/Debug/net5.0/FarmCord/Assets/
-
-RUN cd ..
-
-RUN cd ./bin/Debug/net5.0/
-
-CMD ["dotnet", "run", "FarmCord.dll"]
+COPY . ./
+RUN dotnet publish -c Release -o /app/publish
+FROM mcr.microsoft.com/dotnet/runtime:8.0
+WORKDIR /app
+COPY --from=build /app/publish .
+RUN mkdir -p Assets
+RUN mkdir -p FarmOutput
+ENTRYPOINT ["dotnet", "FarmCord.dll"]

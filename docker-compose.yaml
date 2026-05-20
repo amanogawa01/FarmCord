@@ -2,9 +2,31 @@ version: '3.9'
 
 services:
   mongo-service:
-    image: 'mongo'
-  bot-service:
+    image: mongo:7
+    container_name: farmcord-mongo
     restart: unless-stopped
+
+    ports:
+      - "27017:27017"
+
+    volumes:
+      - mongo-data:/data/db
+
+  bot-service:
+    container_name: farmcord-bot
+    restart: unless-stopped
+
     build:
+      context: .
       dockerfile: Dockerfile
-      context: ./
+
+    depends_on:
+      - mongo-service
+
+    volumes:
+      - ./Assets:/app/Assets
+      - ./FarmOutput:/app/FarmOutput
+      - ./creds.json:/app/creds.json
+
+volumes:
+  mongo-data:
