@@ -1,20 +1,15 @@
-﻿namespace FarmCord.Services.MongoService
+﻿using MongoDB.Driver;
+
+namespace FarmCord.Services;
+
+public class MongoService
 {
-    public class MongoService
+    public IMongoDatabase Database { get; }
+
+    public MongoService()
     {
-        public string MongoUrl
-        {
-            get; set;
-        }
+        var client = new MongoClient("mongodb://mongo-service:27017");
 
-        public string Database
-        {
-            get; set;
-        }
-
-        public string Collection
-        {
-            get; set;
-        }
+        Database = client.GetDatabase("DiscordUser");
     }
 }
