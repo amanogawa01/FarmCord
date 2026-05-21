@@ -1,14 +1,153 @@
 # FarmCord
-FarmCord is a bot for Discord where you can farm seeds that you have planted, and more coming soon!
 
-# Inviting the bot
-You can invite FarmCord's official bot using this [link](https://discordapp.com/oauth2/authorize?client_id=630849680431120385&permissions=67423296&scope=bot).
+FarmCord is a farming bot for Discord written in C# using .NET 8, Discord.Net, MongoDB, and Docker.
 
-# IMPORTANT, PLEASE READ
+Plant crops, collect rewards, generate farm images, and manage your own farming economy directly inside Discord.
 
-So I started working on this bot about 1 year ago in javascript. Towards the end of 2019, I kinda lost motivation on programming, so I didn't really work on this bot. 
-Originally this would be using the dev version of discord.js v12. 
-Well, while I was taking a break from working on this, discord.js v12 pushed out to stable, and it changed a lot of things. I also looked at my code, and I realized that I was going to have to rewrite a lot of things, and I didn't really want to use discord.js anymore. 
-So I got to thinking, if I'm going to have to rewrite everything, and switch the lib that it is written in, why not just totally rewrite in a different language? 
+---
 
-So I'm doing that. 
+## Features
+
+- Slash command support (in progress / migration from prefix commands)
+- MongoDB database support
+- Farm image generation using ImageMagick
+- Daily rewards system
+- Custom server prefixes
+- Owner-only commands
+- Docker support
+---
+
+# Self Hosting
+
+## Requirements
+
+- Docker
+- Docker Compose
+- Discord Bot Token
+
+Optional for local development:
+
+- .NET 8 SDK
+- MongoDB
+
+---
+
+# Creating a Discord Bot
+
+1. Go to the Discord Developer Portal  
+2. Create a new application  
+3. Go to the Bot tab  
+4. Create a bot user  
+5. Enable required intents:
+   - Message Content Intent (if using prefix commands)
+   - Server Members Intent (optional depending on features)
+6. Copy your bot token  
+
+---
+
+# Configuration
+
+Create a `creds.json` file in the root directory:
+
+```json
+{
+  "Token": "YOUR_BOT_TOKEN",
+  "Prefix": "=>",
+  "ClientID": "YOUR_CLIENT_ID",
+  "BotVersion": 1,
+  "OwnerID": "YOUR_USER_ID",
+  "EmbedColor": 65280,
+  "ErrorColor": 16711680
+}
+```
+
+---
+
+# Running with Docker
+
+## Clone the repository
+
+```bash
+git clone https://github.com/amanogawa01/FarmCord.git
+cd FarmCord
+```
+
+## Build and start the bot
+
+```bash
+docker compose up --build -d
+```
+
+## View logs
+
+```bash
+docker compose logs -f
+```
+
+## Stop the bot
+
+```bash
+docker compose down
+```
+
+---
+
+# Running Without Docker
+
+## Restore dependencies
+
+```bash
+dotnet restore
+```
+
+## Build the project
+
+```bash
+dotnet build
+```
+
+## Run the bot
+
+```bash
+dotnet run
+```
+
+---
+
+# Assets
+
+Farm images are generated using:
+
+```text
+FarmCord/Assets/
+```
+
+Generated farm images are stored in:
+
+```text
+FarmOutput/
+```
+
+---
+
+# Project Structure
+
+```text
+FarmCord/
+│  Program.cs
+│  creds.cs
+│
+├─Assets
+├─Modules
+│  ├─General
+│  └─Owner
+└─Services
+   └─Extensions
+```
+
+
+---
+
+# License
+
+This project is licensed under the Apache-2.0 License.
