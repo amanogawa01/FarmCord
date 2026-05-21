@@ -1,5 +1,5 @@
 ﻿using Discord;
-using Discord.Commands;
+using Discord.Interactions;
 using FarmCord.Services;
 using FarmCord.Services.DailyService;
 using FarmCord.Services.PrefixService;
@@ -9,11 +9,12 @@ using MongoDB.Driver;
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace FarmCord.General.Module;
 
-public class GeneralModule : ModuleBase<SocketCommandContext>
+public class GeneralModule : InteractionModuleBase<SocketInteractionContext>
 {
     private readonly MongoService _mongo;
 
@@ -21,57 +22,78 @@ public class GeneralModule : ModuleBase<SocketCommandContext>
     {
         _mongo = mongo;
     }
-    [Command("help"), Alias("h")]
+
+    [SlashCommand("help", "Shows all commands")]
     public async Task HelpAsync()
     {
-        await ReplyAsync(embed: new EmbedBuilder()
+        var embed = new EmbedBuilder()
             .WithTitle($"{Context.Client.CurrentUser.Username} Help")
             .WithColor(Color.Green)
-            .WithDescription(
-@"help - commands
-invite - invite bot
-ping - latency
-shop - shop items
-start - start farm
-daily - claim reward")
-            .Build());
+            .WithDescription("""
+/help - commands
+/invite - invite bot
+/ping - latency
+/shop - shop items
+/start - start farm
+/daily - claim reward
+/prefix - set server prefix
+/stats - bot stats
+""")
+            .Build();
+
+        await RespondAsync(embed: embed);
     }
-    [Command("invite")]
+
+    [SlashCommand("invite", "Get the bot invite link")]
     public async Task InviteAsync()
     {
-        await ReplyAsync("https://discord.com/oauth2/authorize?client_id=630849680431120385&scope=bot");
+        await RespondAsync(
+            "https://discord.com/oauth2/authorize?client_id=630849680431120385&scope=bot");
     }
-    [Command("ping")]
+
+    [SlashCommand("ping", "Shows bot latency")]
     public async Task PingAsync()
     {
         var sw = Stopwatch.StartNew();
-        var msg = await ReplyAsync("🏓");
+
+        await RespondAsync("🏓 Pong!");
+
         sw.Stop();
 
-        await msg.DeleteAsync();
-
-        await ReplyAsync($"🏓 {sw.ElapsedMilliseconds}ms");
+        await FollowupAsync(
+            $"Latency: `{sw.ElapsedMilliseconds}ms`");
     }
-    [Command("shop"), Alias("sh")]
+
+    [SlashCommand("shop", "Shows the farm shop")]
     public async Task ShopAsync()
     {
-        await ReplyAsync(embed: new EmbedBuilder()
+        var embed = new EmbedBuilder()
             .WithTitle("Farm Shop")
             .WithColor(Color.Gold)
-            .WithDescription(
-@"🌱 Watermelon Seed - 50
-🌽 Corn Seed - 60
-🍈 Cantaloupe Seed - 45")
-            .Build());
+            .WithDescription("""
+🌱 Watermelon Seed - FC$50
+🌽 Corn Seed - FC$60
+🍈 Cantaloupe Seed - FC$45
+""")
+            .Build();
+
+        await RespondAsync(embed: embed);
     }
-    [Command("start")]
+
+    [SlashCommand("start", "Create your farm image")]
     public async Task StartAsync()
     {
-        var path = Path.Combine(AppContext.BaseDirectory, "Assets", "Island.png");
+        var path = Path.Combine(
+            AppContext.BaseDirectory,
+            "Assets",
+            "Island.png");
 
         if (!File.Exists(path))
         {
-            await ReplyAsync("Missing asset image.");
+            await RespondAsync(
+                "Missing asset image.",
+                ephemeral: true);
+
             return;
         }
 
@@ -81,24 +103,38 @@ daily - claim reward")
             .FontPointSize(48)
             .FillColor(MagickColors.White)
             .TextAlignment(TextAlignment.Center)
-            .Text(image.Width / 2, 50, $"{Context.User.Username}'s Farm")
+            .Text(
+                image.Width / 2,
+                50,
+                $"{Context.User.Username}'s Farm")
             .Draw(image);
 
-        var outputDir = Path.Combine(AppContext.BaseDirectory, "FarmOutput");
+        var outputDir = Path.Combine(
+            AppContext.BaseDirectory,
+            "FarmOutput");
+
         Directory.CreateDirectory(outputDir);
 
-        var file = Path.Combine(outputDir, $"Farm_{Context.User.Id}.png");
+        var file = Path.Combine(
+            outputDir,
+            $"Farm_{Context.User.Id}.png");
 
         image.Write(file);
 
-        await Context.Channel.SendFileAsync(file);
+        await RespondWithFileAsync(file);
     }
-    [Command("prefix")]
-    public async Task PrefixAsync(string prefix)
+
+    [SlashCommand("prefix", "Set the server prefix")]
+    public async Task PrefixAsync(
+        [Summary("prefix", "New server prefix")]
+        string prefix)
     {
         if (Context.Guild == null)
         {
-            await ReplyAsync("Guild-only command.");
+            await RespondAsync(
+                "Guild-only command.",
+                ephemeral: true);
+
             return;
         }
 
@@ -114,23 +150,41 @@ daily - claim reward")
         await collection.ReplaceOneAsync(
             x => x.ServerId == Context.Guild.Id,
             doc,
-            new ReplaceOptions { IsUpsert = true });
+            new ReplaceOptions
+            {
+                IsUpsert = true
+            });
 
-        await ReplyAsync($"Prefix set to `{prefix}`");
+        await RespondAsync(
+            $"Prefix set to `{prefix}`");
     }
-    [Command("stats")]
+
+    [SlashCommand("stats", "Shows bot statistics")]
     public async Task StatsAsync()
     {
         var proc = Process.GetCurrentProcess();
 
-        await ReplyAsync(embed: new EmbedBuilder()
+        var embed = new EmbedBuilder()
             .WithColor(Color.Blue)
-            .AddField("Uptime", proc.StartTime.ToString())
-            .AddField("Servers", Context.Client.Guilds.Count)
-            .Build());
+            .AddField(
+                "Uptime",
+                proc.StartTime.ToString(),
+                true)
+            .AddField(
+                "Servers",
+                Context.Client.Guilds.Count,
+                true)
+            .AddField(
+                "Users",
+                Context.Client.Guilds.Sum(
+                    x => x.MemberCount),
+                true)
+            .Build();
+
+        await RespondAsync(embed: embed);
     }
 
-    [Command("daily"), Alias("timely")]
+    [SlashCommand("daily", "Claim your daily reward")]
     public async Task DailyAsync()
     {
         var collection = _mongo.Database
@@ -143,13 +197,22 @@ daily - claim reward")
             .FirstOrDefaultAsync();
 
         if (existing != null &&
-            (DateTime.UtcNow - existing.DailyDate).TotalHours < 24)
+            (DateTime.UtcNow - existing.DailyDate)
+            .TotalHours < 24)
         {
-            await ReplyAsync("You already claimed your daily reward.");
+            var remaining =
+                TimeSpan.FromHours(24) -
+                (DateTime.UtcNow - existing.DailyDate);
+
+            await RespondAsync(
+                $"You already claimed your daily reward.\n" +
+                $"Try again in `{remaining.Hours}h {remaining.Minutes}m`.",
+                ephemeral: true);
+
             return;
         }
 
-        var reward = 100;
+        const int reward = 100;
 
         var doc = new DailyService
         {
@@ -161,11 +224,18 @@ daily - claim reward")
         await collection.ReplaceOneAsync(
             x => x.UserID == userId,
             doc,
-            new ReplaceOptions { IsUpsert = true });
+            new ReplaceOptions
+            {
+                IsUpsert = true
+            });
 
-        await ReplyAsync(embed: new EmbedBuilder()
+        var embed = new EmbedBuilder()
             .WithColor(Color.Green)
-            .WithDescription($"You received FC${reward}!")
-            .Build());
+            .WithTitle("Daily Reward")
+            .WithDescription(
+                $"You received `FC${reward}`!")
+            .Build();
+
+        await RespondAsync(embed: embed);
     }
 }

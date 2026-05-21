@@ -1,5 +1,5 @@
 ﻿using Discord;
-using Discord.Commands;
+using Discord.Interactions;
 using Discord.WebSocket;
 using FarmCord.Services;
 using Microsoft.Extensions.DependencyInjection;
@@ -14,7 +14,7 @@ namespace FarmCord;
 public class Program
 {
     private DiscordSocketClient _client = null!;
-    private CommandService _commands = null!;
+    private InteractionService _interactions = null!;
     private IServiceProvider _services = null!;
     private Creds _creds = null!;
 
@@ -23,7 +23,6 @@ public class Program
 
     public async Task MainAsync()
     {
-
         var credsPath = Path.Combine(
             AppContext.BaseDirectory,
             "creds.json");
@@ -43,30 +42,24 @@ public class Program
             GatewayIntents =
                 GatewayIntents.Guilds |
                 GatewayIntents.GuildMessages |
-                GatewayIntents.DirectMessages |
-                GatewayIntents.MessageContent,
+                GatewayIntents.DirectMessages,
 
             LogLevel = LogSeverity.Info
         });
 
-        _commands = new CommandService(new CommandServiceConfig
-        {
-            LogLevel = LogSeverity.Info,
-            CaseSensitiveCommands = false
-        });
-
+        _interactions = new InteractionService(_client.Rest);
 
         _services = new ServiceCollection()
             .AddSingleton(_client)
-            .AddSingleton(_commands)
+            .AddSingleton(_interactions)
             .AddSingleton<MongoService>()
             .BuildServiceProvider();
 
         _client.Log += LogAsync;
-        _commands.Log += LogAsync;
+        _interactions.Log += LogAsync;
 
-        await RegisterCommandsAsync();
-
+        _client.Ready += ReadyAsync;
+        _client.InteractionCreated += HandleInteraction;
 
         await _client.LoginAsync(
             TokenType.Bot,
@@ -74,66 +67,54 @@ public class Program
 
         await _client.StartAsync();
 
-
-        _client.Ready += OnReadyAsync;
-
         await Task.Delay(-1);
     }
 
-    private async Task OnReadyAsync()
+    private async Task ReadyAsync()
     {
-        await _client.SetGameAsync("Start your farm today!");
+        await _interactions.AddModulesAsync(
+            Assembly.GetEntryAssembly(),
+            _services);
+
+        await _interactions.RegisterCommandsGloballyAsync();
+
+        await _client.SetGameAsync(
+            "Start your farm today!");
 
         Console.WriteLine(
             $"Connected as {_client.CurrentUser}");
     }
 
-
-    private async Task RegisterCommandsAsync()
+    private async Task HandleInteraction(
+        SocketInteraction interaction)
     {
-        _client.MessageReceived += HandleCommandAsync;
-
-        await _commands.AddModulesAsync(
-            Assembly.GetEntryAssembly(),
-            _services);
-    }
-
-    private async Task HandleCommandAsync(SocketMessage rawMessage)
-    {
-        if (rawMessage is not SocketUserMessage message)
-            return;
-
-        if (message.Author.IsBot)
-            return;
-
-        int argPos = 0;
-
-        bool hasPrefix =
-            message.HasStringPrefix(_creds.Prefix, ref argPos) ||
-            message.HasMentionPrefix(_client.CurrentUser, ref argPos);
-
-        if (!hasPrefix)
-            return;
-
-        var context = new SocketCommandContext(
-            _client,
-            message);
-
-        var result = await _commands.ExecuteAsync(
-            context,
-            argPos,
-            _services);
-
-        if (!result.IsSuccess)
+        try
         {
-            await context.Channel.SendMessageAsync(
-                $"Error: {result.ErrorReason}");
+            var context = new SocketInteractionContext(
+                _client,
+                interaction);
+
+            await _interactions.ExecuteCommandAsync(
+                context,
+                _services);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex);
+
+            if (interaction.Type ==
+                InteractionType.ApplicationCommand)
+            {
+                await interaction.GetOriginalResponseAsync()
+                    .ContinueWith(async msg =>
+                        await msg.Result.DeleteAsync());
+            }
         }
     }
 
-    private Task LogAsync(LogMessage message)
+    private Task LogAsync(LogMessage msg)
     {
-        Console.WriteLine(message.ToString());
+        Console.WriteLine(msg.ToString());
 
         return Task.CompletedTask;
     }

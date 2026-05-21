@@ -1,9 +1,10 @@
 ﻿using Discord;
-using Discord.Commands;
+using Discord.Interactions;
 using Discord.WebSocket;
 using FarmCord.Services;
 using FarmCord.Services.ServerBlackListService;
 using FarmCord.Services.UserBlackListService;
+using MongoDB.Driver;
 using System;
 using System.IO;
 using System.IO.Compression;
@@ -13,31 +14,44 @@ using System.Threading.Tasks;
 namespace FarmCord.Owner.Module;
 
 [RequireOwner]
-public class OwnerModule : ModuleBase<SocketCommandContext>
+public class OwnerModule : InteractionModuleBase<SocketInteractionContext>
 {
     private readonly MongoService _mongo;
     private readonly DiscordSocketClient _client;
 
-    public OwnerModule(MongoService mongo, DiscordSocketClient client)
+    public OwnerModule(
+        MongoService mongo,
+        DiscordSocketClient client)
     {
         _mongo = mongo;
         _client = client;
     }
 
-    [Command("serverblacklist")]
-    [Alias("sbl")]
-    public async Task ServerBlackListAsync(ulong serverId, [Remainder] string reason = "")
+
+    [SlashCommand(
+        "serverblacklist",
+        "Blacklist a server from using the bot")]
+    public async Task ServerBlackListAsync(
+        [Summary("serverid", "The server ID")]
+        ulong serverId,
+
+        [Summary("reason", "Reason for blacklist")]
+        string reason = "No reason provided")
     {
         var server = _client.GetGuild(serverId);
 
         if (server == null)
         {
-            await ReplyAsync("Server not found.");
+            await RespondAsync(
+                "Server not found.",
+                ephemeral: true);
+
             return;
         }
 
         var collection = _mongo.Database
-            .GetCollection<ServerBlackListDoc>("ServerBlackLists");
+            .GetCollection<ServerBlackListDoc>(
+                "ServerBlackLists");
 
         var doc = new ServerBlackListDoc
         {
@@ -47,28 +61,49 @@ public class OwnerModule : ModuleBase<SocketCommandContext>
             Reason = reason
         };
 
-        await collection.InsertOneAsync(doc);
+        await collection.ReplaceOneAsync(
+            x => x.ServerId == server.Id,
+            doc,
+            new ReplaceOptions
+            {
+                IsUpsert = true
+            });
 
-        await ReplyAsync(embed: new EmbedBuilder()
+        var embed = new EmbedBuilder()
             .WithColor(Color.DarkRed)
-            .WithDescription($"Blacklisted server **{server.Name}** (`{server.Id}`)")
-            .Build());
+            .WithTitle("Server Blacklisted")
+            .WithDescription(
+                $"**{server.Name}** (`{server.Id}`)")
+            .AddField("Reason", reason)
+            .Build();
+
+        await RespondAsync(embed: embed);
     }
 
-    [Command("userblacklist")]
-    [Alias("ubl")]
-    public async Task UserBlackListAsync(ulong userId, [Remainder] string reason = "")
+    [SlashCommand(
+        "userblacklist",
+        "Blacklist a user from using the bot")]
+    public async Task UserBlackListAsync(
+        [Summary("userid", "The user ID")]
+        ulong userId,
+
+        [Summary("reason", "Reason for blacklist")]
+        string reason = "No reason provided")
     {
         var user = await _client.GetUserAsync(userId);
 
         if (user == null)
         {
-            await ReplyAsync("User not found.");
+            await RespondAsync(
+                "User not found.",
+                ephemeral: true);
+
             return;
         }
 
         var collection = _mongo.Database
-            .GetCollection<UserBlackListDoc>("UserBlackLists");
+            .GetCollection<UserBlackListDoc>(
+                "UserBlackLists");
 
         var doc = new UserBlackListDoc
         {
@@ -78,106 +113,189 @@ public class OwnerModule : ModuleBase<SocketCommandContext>
             Reason = reason
         };
 
-        await collection.InsertOneAsync(doc);
+        await collection.ReplaceOneAsync(
+            x => x.UserId == user.Id,
+            doc,
+            new ReplaceOptions
+            {
+                IsUpsert = true
+            });
 
-        await ReplyAsync(embed: new EmbedBuilder()
+        var embed = new EmbedBuilder()
             .WithColor(Color.DarkRed)
-            .WithDescription($"Blacklisted user **{user.Username}** (`{user.Id}`)")
-            .Build());
+            .WithTitle("User Blacklisted")
+            .WithDescription(
+                $"**{user.Username}** (`{user.Id}`)")
+            .AddField("Reason", reason)
+            .Build();
+
+        await RespondAsync(embed: embed);
     }
 
-    [Command("dm")]
-    public async Task DmAsync(ulong userId, [Remainder] string message)
+    [SlashCommand(
+        "dm",
+        "Send a DM to a user")]
+    public async Task DmAsync(
+        [Summary("userid", "The user ID")]
+        ulong userId,
+
+        [Summary("message", "Message to send")]
+        string message)
     {
         var user = await _client.GetUserAsync(userId);
 
         if (user == null)
         {
-            await ReplyAsync("User not found.");
+            await RespondAsync(
+                "User not found.",
+                ephemeral: true);
+
             return;
         }
 
         var dm = await user.CreateDMChannelAsync();
 
         var embed = new EmbedBuilder()
-            .WithAuthor($"Message from {_client.CurrentUser.Username}")
-            .WithThumbnailUrl(_client.CurrentUser.GetAvatarUrl())
-            .WithDescription(message)
+            .WithAuthor(
+                $"Message from {_client.CurrentUser.Username}")
+            .WithThumbnailUrl(
+                _client.CurrentUser.GetAvatarUrl())
             .WithColor(Color.Blue)
+            .WithDescription(message)
+            .WithTimestamp(DateTimeOffset.UtcNow)
             .Build();
 
         await dm.SendMessageAsync(embed: embed);
 
-        await ReplyAsync($"DM sent to `{user.Username}`");
+        await RespondAsync(
+            $"DM successfully sent to `{user.Username}`",
+            ephemeral: true);
     }
 
-    [Command("listservers")]
+    [SlashCommand(
+        "listservers",
+        "Lists all servers the bot is in")]
     public async Task ListServersAsync()
     {
         var guilds = _client.Guilds
-            .Select(x => $"{x.Name} ({x.Id})");
+            .Select(x =>
+                $"{x.Name} ({x.Id})");
 
-        var output = string.Join("\n", guilds);
+        var output = string.Join(
+            "\n",
+            guilds);
 
         if (string.IsNullOrWhiteSpace(output))
+        {
             output = "No servers.";
+        }
 
-        await ReplyAsync($"```{output}```");
+        if (output.Length > 1900)
+        {
+            output = output[..1900];
+        }
+
+        await RespondAsync(
+            $"```{output}```",
+            ephemeral: true);
     }
 
-    [Command("setgame")]
-    public async Task SetGameAsync([Remainder] string game)
+    [SlashCommand(
+        "setgame",
+        "Set the bot game/activity")]
+    public async Task SetGameAsync(
+        [Summary("game", "The game text")]
+        string game)
     {
         await _client.SetGameAsync(game);
 
-        await ReplyAsync($"Game set to: `{game}`");
+        await RespondAsync(
+            $"Game set to `{game}`");
     }
 
-    [Command("setstatus")]
-    public async Task SetStatusAsync(string status)
+    [SlashCommand(
+        "setstatus",
+        "Set the bot status")]
+    public async Task SetStatusAsync(
+        [Summary(
+            "status",
+            "online, idle, dnd, invisible")]
+        string status)
     {
-        if (!Enum.TryParse<UserStatus>(status, true, out var parsed))
+        if (!Enum.TryParse<UserStatus>(
+            status,
+            true,
+            out var parsed))
         {
-            await ReplyAsync("Valid statuses: online, idle, dnd, invisible");
+            await RespondAsync(
+                "Valid statuses:\n" +
+                "`online`\n" +
+                "`idle`\n" +
+                "`dnd`\n" +
+                "`invisible`",
+                ephemeral: true);
+
             return;
         }
 
         await _client.SetStatusAsync(parsed);
 
-        await ReplyAsync($"Status updated to `{parsed}`");
+        await RespondAsync(
+            $"Status updated to `{parsed}`");
     }
 
-    [Command("shutdown")]
-    [Alias("die", "kill", "commitdie")]
+    [SlashCommand(
+        "shutdown",
+        "Shutdown the bot")]
     public async Task ShutdownAsync()
     {
-        await ReplyAsync("Shutting down...");
+        await RespondAsync(
+            "Shutting down...");
 
         await _client.LogoutAsync();
+
         Environment.Exit(0);
     }
 
-    [Command("backup")]
+    [SlashCommand(
+        "backup",
+        "Create and DM a backup zip")]
     public async Task BackupAsync()
     {
-        var outputDir = Path.Combine(AppContext.BaseDirectory, "FarmOutput");
+        var outputDir = Path.Combine(
+            AppContext.BaseDirectory,
+            "FarmOutput");
 
         if (!Directory.Exists(outputDir))
         {
-            await ReplyAsync("FarmOutput folder not found.");
+            await RespondAsync(
+                "FarmOutput folder not found.",
+                ephemeral: true);
+
             return;
         }
 
-        var backupName = $"FarmBackup_{DateTime.UtcNow:yyyy-MM-dd_HH-mm-ss}.zip";
+        var backupName =
+            $"FarmBackup_{DateTime.UtcNow:yyyy-MM-dd_HH-mm-ss}.zip";
 
         var backupPath = Path.Combine(
             AppContext.BaseDirectory,
             backupName);
 
-        ZipFile.CreateFromDirectory(outputDir, backupPath);
+        if (File.Exists(backupPath))
+        {
+            File.Delete(backupPath);
+        }
 
-        await Context.User.SendFileAsync(backupPath);
+        ZipFile.CreateFromDirectory(
+            outputDir,
+            backupPath);
 
-        await ReplyAsync("Backup created and sent.");
+        await Context.User.SendFileAsync(
+            backupPath);
+
+        await RespondAsync(
+            "Backup created and sent.",
+            ephemeral: true);
     }
 }
